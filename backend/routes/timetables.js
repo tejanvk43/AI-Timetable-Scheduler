@@ -1,0 +1,518 @@
+const express = require('express');
+const router = express.Router();
+const { protect, authorize } = require('../middleware/auth');
+const Timetable = require('../models/Timetable');
+const Class = require('../models/Class');
+const Subject = require('../models/Subject');
+const User = require('../models/User');
+
+// @route   GET /api/timetables
+// @desc    Get all timetables
+// @access  Public
+router.get('/', async (req, res) => {
+  try {
+    const timetables = await Timetable.find()
+      .populate('class_id', 'name branch year')
+      .select('class_id academic_year periods_per_day last_generated');
+    
+    res.status(200).json({
+      message: 'Timetables retrieved successfully',
+      count: timetables.length,
+      data: timetables
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error retrieving timetables', error: error.message });
+  }
+});
+
+// @route   GET /api/timetables/:id
+// @desc    Get timetable by ID
+// @access  Public
+router.get('/:id', async (req, res) => {
+  try {
+    const timetable = await Timetable.findById(req.params.id)
+      .populate('class_id', 'name branch year class_teacher_id')
+      .populate({
+        path: 'class_id',
+        populate: {
+          path: 'class_teacher_id',
+          select: 'name faculty_id phone_number'
+        }
+      });
+    
+    if (!timetable) {
+      return res.status(404).json({ message: 'Timetable not found' });
+    }
+    
+    // Populate schedule details with subject and faculty info
+    if (timetable.schedule) {
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      
+      for (const day of days) {
+        if (timetable.schedule[day] && timetable.schedule[day].length > 0) {
+          for (let i = 0; i < timetable.schedule[day].length; i++) {
+            const entry = timetable.schedule[day][i];
+            
+            if (entry.subject_id) {
+              const subject = await Subject.findById(entry.subject_id);
+              if (subject) {
+                timetable.schedule[day][i].subject_details = {
+                  name: subject.name,
+                  code: subject.code,
+                  is_lab: subject.is_lab
+                };
+              }
+            }
+            
+            if (entry.faculty_id) {
+              const faculty = await User.findById(entry.faculty_id);
+              if (faculty) {
+                timetable.schedule[day][i].faculty_details = {
+                  name: faculty.name,
+                  faculty_id: faculty.faculty_id
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    res.status(200).json({
+      message: 'Timetable retrieved successfully',
+      data: timetable
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error retrieving timetable', error: error.message });
+  }
+});
+
+// @route   GET /api/timetables/class/:classId
+// @desc    Get timetable by class ID
+// @access  Public
+router.get('/class/:classId', async (req, res) => {
+  try {
+    const timetable = await Timetable.findOne({ class_id: req.params.classId })
+      .populate('class_id', 'name branch year class_teacher_id')
+      .populate({
+        path: 'class_id',
+        populate: {
+          path: 'class_teacher_id',
+          select: 'name faculty_id phone_number'
+        }
+      });
+    
+    if (!timetable) {
+      return res.status(404).json({ message: 'Timetable not found for this class' });
+    }
+    
+    // Populate schedule details with subject and faculty info (same as above)
+    if (timetable.schedule) {
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      
+      for (const day of days) {
+        if (timetable.schedule[day] && timetable.schedule[day].length > 0) {
+          for (let i = 0; i < timetable.schedule[day].length; i++) {
+            const entry = timetable.schedule[day][i];
+            
+            if (entry.subject_id) {
+              const subject = await Subject.findById(entry.subject_id);
+              if (subject) {
+                timetable.schedule[day][i].subject_details = {
+                  name: subject.name,
+                  code: subject.code,
+                  is_lab: subject.is_lab
+                };
+              }
+            }
+            
+            if (entry.faculty_id) {
+              const faculty = await User.findById(entry.faculty_id);
+              if (faculty) {
+                timetable.schedule[day][i].faculty_details = {
+                  name: faculty.name,
+                  faculty_id: faculty.faculty_id
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    res.status(200).json({
+      message: 'Timetable retrieved successfully',
+      data: timetable
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error retrieving timetable', error: error.message });
+  }
+});
+
+// @route   GET /api/timetables/faculty/:facultyId
+// @desc    Get timetable for a faculty member
+// @access  Private
+router.get('/faculty/:facultyId', protect, async (req, res) => {
+  try {
+    // Check if requesting user is the faculty or an admin
+    if (req.user.role !== 'admin' && req.user._id.toString() !== req.params.facultyId) {
+      return res.status(403).json({ message: 'Not authorized to access this timetable' });
+    }
+    
+    const faculty = await User.findById(req.params.facultyId);
+    
+    if (!faculty) {
+      return res.status(404).json({ message: 'Faculty not found' });
+    }
+    
+    // Find all timetables
+    const timetables = await Timetable.find()
+      .populate('class_id', 'name branch year');
+    
+    // Extract faculty schedule from all timetables
+    const facultySchedule = {
+      monday: [],
+      tuesday: [],
+      wednesday: [],
+      thursday: [],
+      friday: [],
+      saturday: []
+    };
+    
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    
+    for (const timetable of timetables) {
+      const classInfo = timetable.class_id;
+      
+      for (const day of days) {
+        if (timetable.schedule[day] && timetable.schedule[day].length > 0) {
+          for (const entry of timetable.schedule[day]) {
+            if (entry.faculty_id && entry.faculty_id.toString() === req.params.facultyId) {
+              const subject = await Subject.findById(entry.subject_id);
+              
+              facultySchedule[day].push({
+                period: entry.period,
+                subject_name: subject ? subject.name : 'Unknown Subject',
+                subject_code: subject ? subject.code : '',
+                is_lab: subject ? subject.is_lab : false,
+                class_name: classInfo ? classInfo.name : 'Unknown Class',
+                period_timing: timetable.period_timings[entry.period - 1]
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    // Sort each day's schedule by period
+    for (const day of days) {
+      facultySchedule[day].sort((a, b) => a.period - b.period);
+    }
+    
+    res.status(200).json({
+      message: 'Faculty timetable retrieved successfully',
+      faculty: {
+        name: faculty.name,
+        faculty_id: faculty.faculty_id
+      },
+      schedule: facultySchedule
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error retrieving faculty timetable', error: error.message });
+  }
+});
+
+// @route   POST /api/timetables
+// @desc    Create new timetable
+// @access  Private/Admin (temporarily disabled for testing)
+router.post('/', async (req, res) => {
+  try {
+    console.log('=== CREATE TIMETABLE REQUEST ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    console.log('User:', req.user);
+    
+    const {
+      class_id,
+      academic_year,
+      periods_per_day,
+      working_days,
+      period_timings,
+      guidelines
+    } = req.body;
+    
+    // Check if class exists
+    const classExists = await Class.findById(class_id);
+    
+    if (!classExists) {
+      console.log('Class not found:', class_id);
+      return res.status(400).json({ message: 'Class not found' });
+    }
+    
+    // Check if timetable for this class and academic year already exists
+    const timetableExists = await Timetable.findOne({ class_id, academic_year });
+    
+    if (timetableExists) {
+      return res.status(400).json({ message: 'Timetable for this class and academic year already exists' });
+    }
+
+    // Generate period names from period timings
+    const periodNames = period_timings
+      ? period_timings
+          .filter(p => !p.is_break)
+          .map(p => p.name)
+      : Array.from({ length: periods_per_day }, (_, i) => `Period ${i + 1}`);
+    
+    // Create empty schedule structure based on working days
+    const emptySchedule = {};
+    const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    allDays.forEach(day => {
+      emptySchedule[day] = [];
+    });
+    
+    // Create new timetable
+    const timetable = await Timetable.create({
+      class_id,
+      academic_year,
+      periods_per_day,
+      working_days: working_days || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      period_names: periodNames,
+      period_timings: period_timings || [],
+      break_timings: [], // Keep for backward compatibility
+      schedule: emptySchedule,
+      guidelines: guidelines || {}
+    });
+    
+    res.status(201).json({
+      message: 'Timetable created successfully',
+      data: timetable
+    });
+  } catch (error) {
+    console.error('=== TIMETABLE CREATION ERROR ===');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', error);
+    res.status(500).json({ message: 'Error creating timetable', error: error.message });
+  }
+});
+
+// @route   PUT /api/timetables/:id
+// @desc    Update timetable structure or guidelines
+// @access  Private/Admin
+router.put('/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const {
+      periods_per_day,
+      period_names,
+      period_timings,
+      break_timings,
+      guidelines
+    } = req.body;
+    
+    let timetable = await Timetable.findById(req.params.id);
+    
+    if (!timetable) {
+      return res.status(404).json({ message: 'Timetable not found' });
+    }
+    
+    // Update timetable structure
+    if (periods_per_day) timetable.periods_per_day = periods_per_day;
+    if (period_names) timetable.period_names = period_names;
+    if (period_timings) timetable.period_timings = period_timings;
+    if (break_timings) timetable.break_timings = break_timings;
+    
+    // Update guidelines
+    if (guidelines) {
+      timetable.guidelines = {
+        ...timetable.guidelines,
+        ...guidelines
+      };
+    }
+    
+    await timetable.save();
+    
+    res.status(200).json({
+      message: 'Timetable updated successfully',
+      data: timetable
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error updating timetable', error: error.message });
+  }
+});
+
+// @route   PUT /api/timetables/:id/schedule
+// @desc    Update timetable schedule
+// @access  Private/Admin
+router.put('/:id/schedule', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { schedule } = req.body;
+    
+    if (!schedule) {
+      return res.status(400).json({ message: 'Please provide schedule' });
+    }
+    
+    let timetable = await Timetable.findById(req.params.id);
+    
+    if (!timetable) {
+      return res.status(404).json({ message: 'Timetable not found' });
+    }
+    
+    // Update schedule
+    timetable.schedule = schedule;
+    timetable.last_generated = new Date();
+    
+    await timetable.save();
+    
+    res.status(200).json({
+      message: 'Timetable schedule updated successfully',
+      data: timetable
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error updating timetable schedule', error: error.message });
+  }
+});
+
+// @route   PUT /api/timetables/:id/reset
+// @desc    Reset timetable schedule
+// @access  Private/Admin
+router.put('/:id/reset', protect, authorize('admin'), async (req, res) => {
+  try {
+    let timetable = await Timetable.findById(req.params.id);
+    
+    if (!timetable) {
+      return res.status(404).json({ message: 'Timetable not found' });
+    }
+    
+    // Reset schedule to empty
+    timetable.schedule = {
+      monday: [],
+      tuesday: [],
+      wednesday: [],
+      thursday: [],
+      friday: [],
+      saturday: []
+    };
+    
+    await timetable.save();
+    
+    res.status(200).json({
+      message: 'Timetable schedule reset successfully',
+      data: timetable
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error resetting timetable schedule', error: error.message });
+  }
+});
+
+// @route   POST /api/timetables
+// @desc    Create new timetable structure
+// @access  Private/Admin
+router.post('/', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { 
+      class_id, 
+      academic_year, 
+      periods_per_day, 
+      working_days, 
+      period_timings, 
+      guidelines 
+    } = req.body;
+    
+    if (!class_id || !academic_year) {
+      return res.status(400).json({ message: 'Class ID and academic year are required' });
+    }
+    
+    // Check if class exists
+    const classExists = await Class.findById(class_id);
+    if (!classExists) {
+      return res.status(404).json({ message: 'Class not found' });
+    }
+    
+    // Check if timetable already exists for this class and academic year
+    const existingTimetable = await Timetable.findOne({ 
+      class_id: class_id, 
+      academic_year: academic_year 
+    });
+    
+    if (existingTimetable) {
+      return res.status(400).json({ 
+        message: 'Timetable structure already exists for this class and academic year' 
+      });
+    }
+    
+    // Create new timetable structure
+    const timetable = await Timetable.create({
+      class_id,
+      academic_year,
+      periods_per_day: periods_per_day || 6,
+      working_days: working_days || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      period_timings: period_timings || [
+        { name: 'Period 1', start: '09:00', end: '09:50' },
+        { name: 'Period 2', start: '09:50', end: '10:40' },
+        { name: 'Break', start: '10:40', end: '11:00' },
+        { name: 'Period 3', start: '11:00', end: '11:50' },
+        { name: 'Period 4', start: '11:50', end: '12:40' },
+        { name: 'Lunch Break', start: '12:40', end: '01:30' },
+        { name: 'Period 5', start: '01:30', end: '02:20' },
+        { name: 'Period 6', start: '02:20', end: '03:10' }
+      ],
+      guidelines: guidelines || {
+        minimize_consecutive_faculty_periods: true,
+        labs_once_a_week: true,
+        sports_last_period_predefined_day: 'friday',
+        break_after_periods: [2, 4]
+      },
+      schedule: {
+        monday: [],
+        tuesday: [],
+        wednesday: [],
+        thursday: [],
+        friday: [],
+        saturday: []
+      }
+    });
+    
+    // Populate the response
+    const populatedTimetable = await Timetable.findById(timetable._id)
+      .populate('class_id', 'name branch year section');
+    
+    res.status(201).json({
+      message: 'Timetable structure created successfully',
+      data: populatedTimetable
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error creating timetable structure', error: error.message });
+  }
+});
+
+// @route   DELETE /api/timetables/:id
+// @desc    Delete timetable
+// @access  Private/Admin
+router.delete('/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const timetable = await Timetable.findById(req.params.id);
+    
+    if (!timetable) {
+      return res.status(404).json({ message: 'Timetable not found' });
+    }
+    
+    await Timetable.findByIdAndDelete(req.params.id);
+    
+    res.status(200).json({
+      message: 'Timetable deleted successfully',
+      data: {}
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error deleting timetable', error: error.message });
+  }
+});
+
+module.exports = router;

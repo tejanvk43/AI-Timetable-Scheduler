@@ -1,0 +1,37 @@
+{
+  "name": "ai-time-table-scheduler",
+  "version": "1.0.0",
+  "description": "AI-powered timetable scheduling system with React frontend and Node.js backend",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "start": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "backend": "cd backend && npm start",
+    "frontend": "cd frontend && npm start",
+    "backend:dev": "cd backend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "backend:install": "cd backend && npm install",
+    "frontend:install": "cd frontend && npm install",
+    "install:all": "npm run backend:install && npm run frontend:install",
+    "test": "concurrently \"cd backend && npm test\" \"cd frontend && npm test\"",
+    "clean": "concurrently \"cd backend && rm -rf node_modules\" \"cd frontend && rm -rf node_modules\"",
+    "setup": "npm install && npm run install:all"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": [
+    "timetable",
+    "scheduling",
+    "ai",
+    "react",
+    "nodejs",
+    "mongodb"
+  ],
+  "author": "",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/ai-timetable-scheduler.git"
+  }
+}
