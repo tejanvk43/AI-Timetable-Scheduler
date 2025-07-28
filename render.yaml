@@ -1,0 +1,43 @@
+services:
+  # Backend Service
+  - type: web
+    name: notice-board-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        value: mongodb+srv://ptejanvk:Teja%404569@main.pgpt3dm.mongodb.net/notice-board?retryWrites=true&w=majority&appName=Main
+      - key: JWT_SECRET
+        generateValue: true
+    autoDeploy: true
+
+  # Frontend Service  
+  - type: static
+    name: notice-board-frontend
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/build
+    pullRequestPreviewsEnabled: true
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://notice-board-backend.onrender.com/api
+    autoDeploy: true

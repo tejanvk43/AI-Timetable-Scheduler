@@ -1,7 +1,7 @@
 {
   "name": "timetable-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "Backend API for AI Timetable Scheduler",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -12,7 +12,13 @@
     "fix-admin": "node fix-admin.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "timetable",
+    "scheduling",
+    "ai",
+    "express",
+    "mongodb"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
