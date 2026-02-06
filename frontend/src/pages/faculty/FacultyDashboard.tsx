@@ -1,43 +1,103 @@
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { useAuth } from '../../context/AuthContext.js';
-import { timetables, subjects } from '../../utils/api';
+import { timetables } from '../../utils/api';
+
+interface ScheduleEntry {
+  period: number;
+  subject_name: string;
+  subject_code: string;
+  is_lab: boolean;
+  class_name: string;
+  period_timing?: {
+    start_time: string;
+    end_time: string;
+  };
+}
+
+interface FacultySchedule {
+  [day: string]: ScheduleEntry[];
+}
 
 const FacultyDashboard: React.FC = () => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [myTimetables, setMyTimetables] = useState<any[]>([]);
+  const [mySchedule, setMySchedule] = useState<FacultySchedule>({});
   const [mySubjects, setMySubjects] = useState<any[]>([]);
-  const [selectedTimetable, setSelectedTimetable] = useState<any>(null);
+  const [myClasses, setMyClasses] = useState<string[]>([]);
+  const [facultyInfo, setFacultyInfo] = useState<{ name: string; faculty_id: string } | null>(null);
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
-  const [selectedDay, setSelectedDay] = useState<string>('Monday');
+  const [selectedDay, setSelectedDay] = useState<string>('monday');
 
-  const workingDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const workingDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayLabels: { [key: string]: string } = {
+    monday: 'Monday',
+    tuesday: 'Tuesday',
+    wednesday: 'Wednesday',
+    thursday: 'Thursday',
+    friday: 'Friday',
+    saturday: 'Saturday'
+  };
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!currentUser?._id) return;
+      if (!currentUser?._id) {
+        setLoading(false);
+        return;
+      }
 
       try {
         setLoading(true);
         
         // Fetch faculty timetables
         const timetableResponse = await timetables.getByFaculty(currentUser._id);
-        setMyTimetables(timetableResponse.data.data);
+        const responseData = timetableResponse.data;
         
-        // Fetch faculty subjects
-        const subjectsResponse = await subjects.getAll();
-        // Filter subjects assigned to this faculty
-        const facultySubjects = subjectsResponse.data.data.filter(
-          (subject: any) => subject.faculty && subject.faculty.includes(currentUser._id)
-        );
-        setMySubjects(facultySubjects);
+        console.log('Faculty timetable response:', responseData);
+        
+        // The backend returns { schedule: {...}, faculty: {...} }
+        if (responseData.schedule) {
+          setMySchedule(responseData.schedule);
+          
+          // Extract unique subjects from schedule
+          const uniqueSubjects: any[] = [];
+          const subjectSet = new Set<string>();
+          const classSet = new Set<string>();
+          
+          Object.values(responseData.schedule).forEach((daySchedule: any) => {
+            if (Array.isArray(daySchedule)) {
+              daySchedule.forEach((entry: ScheduleEntry) => {
+                if (entry.subject_code && !subjectSet.has(entry.subject_code)) {
+                  subjectSet.add(entry.subject_code);
+                  uniqueSubjects.push({
+                    name: entry.subject_name,
+                    code: entry.subject_code,
+                    is_lab: entry.is_lab
+                  });
+                }
+                if (entry.class_name) {
+                  classSet.add(entry.class_name);
+                }
+              });
+            }
+          });
+          
+          setMySubjects(uniqueSubjects);
+          setMyClasses(Array.from(classSet));
+        }
+        
+        if (responseData.faculty) {
+          setFacultyInfo(responseData.faculty);
+        }
         
         setLoading(false);
       } catch (err) {
         console.error('Error fetching faculty data:', err);
         setError('Failed to load your data. Please try again later.');
+        setMySchedule({});
+        setMySubjects([]);
+        setMyClasses([]);
         setLoading(false);
       }
     };
@@ -45,340 +105,370 @@ const FacultyDashboard: React.FC = () => {
     fetchData();
   }, [currentUser]);
 
-  const handleTimetableSelect = (timetableId: string) => {
-    const selected = myTimetables.find(t => t._id === timetableId);
-    if (selected) {
-      setSelectedTimetable(selected);
-      // Default to the first day if we switch to day view
-      if (selected.schedule && Object.keys(selected.schedule).length > 0) {
-        setSelectedDay(Object.keys(selected.schedule)[0]);
+  // Get total periods count
+  const getTotalPeriods = (): number => {
+    let total = 0;
+    Object.values(mySchedule).forEach((daySchedule: any) => {
+      if (Array.isArray(daySchedule)) {
+        total += daySchedule.length;
       }
-    }
-  };
-
-  // Get all scheduled periods for the current faculty
-  const getAllScheduledPeriods = () => {
-    if (!selectedTimetable || !selectedTimetable.schedule) return [];
-    
-    const periods: any[] = [];
-    
-    Object.entries(selectedTimetable.schedule).forEach(([day, daySchedule]: [string, any]) => {
-      Object.entries(daySchedule).forEach(([period, slot]: [string, any]) => {
-        if (slot && slot.faculty === currentUser?._id) {
-          periods.push({
-            day,
-            period: parseInt(period),
-            subject: slot.subject,
-            class: selectedTimetable.class_id,
-            duration: slot.duration || 1
-          });
-        }
-      });
     });
-    
-    return periods;
+    return total;
   };
 
-  // Function to group classes by day for weekly view
-  const getScheduleByDay = () => {
-    if (!selectedTimetable?.schedule) return {};
-    
-    // Filter the schedule to only include slots assigned to this faculty
-    const facultySchedule: any = {};
-    
-    Object.entries(selectedTimetable.schedule).forEach(([day, daySchedule]: [string, any]) => {
-      facultySchedule[day] = {};
-      
-      Object.entries(daySchedule).forEach(([period, slot]: [string, any]) => {
-        if (slot && slot.faculty === currentUser?._id) {
-          facultySchedule[day][period] = slot;
-        }
-      });
+  // Check if there's any schedule
+  const hasSchedule = (): boolean => {
+    return Object.values(mySchedule).some((daySchedule: any) => 
+      Array.isArray(daySchedule) && daySchedule.length > 0
+    );
+  };
+
+  // Get max periods in any day (for table structure)
+  const getMaxPeriods = (): number => {
+    let max = 0;
+    Object.values(mySchedule).forEach((daySchedule: any) => {
+      if (Array.isArray(daySchedule)) {
+        daySchedule.forEach((entry: ScheduleEntry) => {
+          if (entry.period > max) max = entry.period;
+        });
+      }
     });
-    
-    return facultySchedule;
-  };
-
-  // Get subject name by ID
-  const getSubjectName = (subjectId: string) => {
-    const subject = mySubjects.find(s => s._id === subjectId);
-    return subject ? subject.name : 'Unknown Subject';
-  };
-
-  // Get class name by ID
-  const getClassName = (classId: string) => {
-    const timetable = myTimetables.find(t => t.class_id._id === classId);
-    if (timetable && timetable.class_id) {
-      return `${timetable.class_id.name} ${timetable.class_id.section || ''}`;
-    }
-    return 'Unknown Class';
+    return max || 8; // Default 8 periods
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-2">Faculty Dashboard</h1>
-      <p className="text-gray-600 mb-8">
-        Welcome back, {currentUser?.name || 'Faculty'}!
-      </p>
-      
-      {loading ? (
-        <div className="flex justify-center my-12">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      ) : error ? (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
-          <p>{error}</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Left Sidebar */}
-          <div className="md:col-span-1 space-y-6">
-            {/* My Subjects Card */}
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4">My Subjects</h2>
-              
-              {mySubjects.length > 0 ? (
-                <ul className="space-y-2">
-                  {mySubjects.map(subject => (
-                    <li key={subject._id} className="p-3 bg-gray-50 rounded-md">
-                      <p className="font-medium">{subject.name}</p>
-                      <p className="text-sm text-gray-500">
-                        {subject.code || 'No code'} • {subject.is_lab ? 'Lab' : 'Theory'}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-500">No subjects assigned yet.</p>
-              )}
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header Section */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">Faculty Dashboard</h1>
+              <p className="text-lg text-gray-600">
+                Welcome back, <span className="font-medium text-blue-700">{currentUser?.name || 'Faculty'}</span>!
+              </p>
             </div>
-            
-            {/* My Classes Card */}
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4">My Classes</h2>
-              
-              {myTimetables.length > 0 ? (
-                <ul className="space-y-2">
-                  {myTimetables.map(timetable => (
-                    <li key={timetable._id}>
-                      <button
-                        onClick={() => handleTimetableSelect(timetable._id)}
-                        className={`w-full p-3 rounded-md text-left transition-colors ${
-                          selectedTimetable?._id === timetable._id
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-gray-50 hover:bg-gray-100'
-                        }`}
-                      >
-                        <p className="font-medium">
-                          {timetable.class_id.name} {timetable.class_id.section || ''}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {getAllScheduledPeriods().filter(p => p.class === timetable.class_id._id).length} periods
-                        </p>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-500">No classes assigned yet.</p>
-              )}
+            <div className="hidden md:block">
+              <div className="flex items-center space-x-4 bg-white rounded-xl px-6 py-3 shadow-sm border border-gray-200">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-sm text-gray-600">Online</span>
+                </div>
+                <div className="text-sm text-gray-500">
+                  {new Date().toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </div>
+              </div>
             </div>
           </div>
-          
-          {/* Main Content */}
-          <div className="md:col-span-2">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              {/* Timetable Header */}
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-semibold">
-                  {selectedTimetable ? (
-                    `Timetable: ${selectedTimetable.class_id.name} ${selectedTimetable.class_id.section || ''}`
-                  ) : (
-                    'My Schedule'
-                  )}
-                </h2>
+        </div>
+        
+        {loading ? (
+          <div className="flex justify-center items-center min-h-[400px]">
+            <div className="text-center">
+              <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading your dashboard...</p>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 border-l-4 border-red-400 p-6 rounded-r-lg shadow-sm" role="alert">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-red-800 font-medium">{error}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Left Sidebar */}
+            <div className="lg:col-span-1 space-y-6">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
+                  <div className="text-3xl font-bold text-blue-600">{getTotalPeriods()}</div>
+                  <div className="text-sm text-gray-500">Total Periods</div>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
+                  <div className="text-3xl font-bold text-green-600">{myClasses.length}</div>
+                  <div className="text-sm text-gray-500">Classes</div>
+                </div>
+              </div>
+
+              {/* My Subjects Card */}
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-gray-900">My Subjects</h2>
+                  <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                  </div>
+                </div>
                 
-                {selectedTimetable && (
+                {mySubjects.length > 0 ? (
+                  <div className="space-y-3">
+                    {mySubjects.map((subject, idx) => (
+                      <div key={idx} className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
+                        <p className="font-medium text-gray-900">{subject.name}</p>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-sm text-gray-600">{subject.code}</p>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            subject.is_lab 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {subject.is_lab ? 'Lab' : 'Theory'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <svg className="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    <p className="text-gray-500">No subjects assigned yet</p>
+                  </div>
+                )}
+              </div>
+              
+              {/* My Classes Card */}
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-gray-900">My Classes</h2>
+                  <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-lg">
+                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-2m-2 0H9m10 0V9a2 2 0 00-2-2H9a2 2 0 00-2 2v12" />
+                    </svg>
+                  </div>
+                </div>
+                
+                {myClasses.length > 0 ? (
+                  <div className="space-y-2">
+                    {myClasses.map((className, idx) => (
+                      <div key={idx} className="p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-100">
+                        <p className="font-medium text-gray-900">{className}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <svg className="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-2m-2 0H9m10 0V9a2 2 0 00-2-2H9a2 2 0 00-2 2v12" />
+                    </svg>
+                    <p className="text-gray-500">No classes assigned yet</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Main Content - Schedule */}
+            <div className="lg:col-span-3">
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                {/* Schedule Header */}
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-semibold text-gray-900">My Schedule</h2>
+                  
                   <div className="flex space-x-2">
                     <button
                       onClick={() => setViewMode('week')}
-                      className={`px-3 py-1 text-sm rounded-md ${
+                      className={`px-4 py-2 text-sm rounded-lg transition-colors ${
                         viewMode === 'week'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-gray-100 text-gray-700'
+                          ? 'bg-blue-100 text-blue-700 font-medium'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
                       Week View
                     </button>
                     <button
                       onClick={() => setViewMode('day')}
-                      className={`px-3 py-1 text-sm rounded-md ${
+                      className={`px-4 py-2 text-sm rounded-lg transition-colors ${
                         viewMode === 'day'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-gray-100 text-gray-700'
+                          ? 'bg-blue-100 text-blue-700 font-medium'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
                       Day View
                     </button>
                   </div>
-                )}
-              </div>
-              
-              {/* Select a timetable message */}
-              {!selectedTimetable && myTimetables.length > 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <p>Please select a class from the sidebar to view the timetable.</p>
                 </div>
-              )}
-              
-              {/* No timetables message */}
-              {!selectedTimetable && myTimetables.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <p>You haven't been assigned to any classes yet.</p>
-                </div>
-              )}
-              
-              {/* Week View */}
-              {selectedTimetable && viewMode === 'week' && (
-                <div>
-                  {Object.keys(getScheduleByDay()).length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full border-collapse">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200">
-                              Day
-                            </th>
-                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200">
-                              Schedule
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(getScheduleByDay()).map(([day, periods]: [string, any]) => (
-                            <tr key={day}>
-                              <td className="py-4 px-6 text-sm font-medium text-gray-900 border border-gray-200 whitespace-nowrap">
-                                {day}
+                
+                {!hasSchedule() ? (
+                  <div className="text-center py-12">
+                    <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-gray-500 text-lg">No schedule assigned yet</p>
+                    <p className="text-gray-400 mt-2">Your timetable will appear here once assigned by an admin.</p>
+                  </div>
+                ) : viewMode === 'week' ? (
+                  /* Week View */
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50">
+                          <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
+                            Day
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
+                            Classes
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workingDays.map(day => {
+                          const daySchedule = mySchedule[day] || [];
+                          const sortedSchedule = [...daySchedule].sort((a, b) => a.period - b.period);
+                          
+                          return (
+                            <tr key={day} className="hover:bg-gray-50">
+                              <td className="py-4 px-4 text-sm font-medium text-gray-900 border border-gray-200 whitespace-nowrap bg-gray-50 w-32">
+                                {dayLabels[day]}
                               </td>
-                              <td className="py-4 px-6 text-sm text-gray-500 border border-gray-200">
-                                {Object.keys(periods).length > 0 ? (
+                              <td className="py-4 px-4 border border-gray-200">
+                                {sortedSchedule.length > 0 ? (
                                   <div className="flex flex-wrap gap-2">
-                                    {Object.entries(periods).map(([period, slot]: [string, any]) => (
+                                    {sortedSchedule.map((entry, idx) => (
                                       <div 
-                                        key={period}
-                                        className={`px-3 py-2 rounded-md ${
-                                          slot.duration > 1 ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
+                                        key={idx}
+                                        className={`px-3 py-2 rounded-lg ${
+                                          entry.is_lab 
+                                            ? 'bg-purple-100 border border-purple-200' 
+                                            : 'bg-blue-50 border border-blue-200'
                                         }`}
                                       >
-                                        <div className="font-medium">Period {period}</div>
-                                        <div className="text-sm">{getSubjectName(slot.subject)}</div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs font-semibold text-gray-500">P{entry.period}</span>
+                                          <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                            entry.is_lab ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'
+                                          }`}>
+                                            {entry.is_lab ? 'Lab' : 'Theory'}
+                                          </span>
+                                        </div>
+                                        <div className="font-medium text-gray-900 mt-1">{entry.subject_name}</div>
+                                        <div className="text-xs text-gray-500">{entry.class_name}</div>
+                                        {entry.period_timing && (
+                                          <div className="text-xs text-gray-400 mt-1">
+                                            {entry.period_timing.start_time} - {entry.period_timing.end_time}
+                                          </div>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
                                 ) : (
-                                  <span className="text-gray-400">No classes</span>
+                                  <span className="text-gray-400 italic">No classes</span>
                                 )}
                               </td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-center py-8 text-gray-500">
-                      You don't have any classes scheduled for this timetable.
-                    </p>
-                  )}
-                </div>
-              )}
-              
-              {/* Day View */}
-              {selectedTimetable && viewMode === 'day' && (
-                <div>
-                  {/* Day Selector */}
-                  <div className="mb-6 flex flex-wrap gap-2">
-                    {workingDays.filter(day => selectedTimetable.schedule && selectedTimetable.schedule[day]).map(day => (
-                      <button
-                        key={day}
-                        onClick={() => setSelectedDay(day)}
-                        className={`px-3 py-1 text-sm rounded-md ${
-                          selectedDay === day
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {day}
-                      </button>
-                    ))}
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                  
-                  {/* Day Schedule */}
-                  {selectedTimetable.schedule && selectedTimetable.schedule[selectedDay] ? (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full border-collapse">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200">
-                              Period
-                            </th>
-                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200">
-                              Subject
-                            </th>
-                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200">
-                              Type
-                            </th>
-                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200">
-                              Class
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(selectedTimetable.schedule[selectedDay])
-                            .filter(([_, slot]) => slot && (slot as any).faculty === currentUser?._id)
-                            .map(([period, slot]) => {
-                              const typedSlot = slot as any;
-                              const subject = mySubjects.find(s => s._id === typedSlot.subject);
-                              
-                              return (
-                                <tr key={period}>
+                ) : (
+                  /* Day View */
+                  <div>
+                    {/* Day Selector */}
+                    <div className="mb-6 flex flex-wrap gap-2">
+                      {workingDays.map(day => (
+                        <button
+                          key={day}
+                          onClick={() => setSelectedDay(day)}
+                          className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                            selectedDay === day
+                              ? 'bg-blue-600 text-white font-medium'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {dayLabels[day]}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* Day Schedule Table */}
+                    {mySchedule[selectedDay] && mySchedule[selectedDay].length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full border-collapse">
+                          <thead>
+                            <tr className="bg-gray-50">
+                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
+                                Period
+                              </th>
+                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
+                                Time
+                              </th>
+                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
+                                Subject
+                              </th>
+                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
+                                Type
+                              </th>
+                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
+                                Class
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...mySchedule[selectedDay]]
+                              .sort((a, b) => a.period - b.period)
+                              .map((entry, idx) => (
+                                <tr key={idx} className="hover:bg-gray-50">
                                   <td className="py-3 px-4 text-sm font-medium text-gray-900 border border-gray-200">
-                                    Period {period}
-                                    {typedSlot.duration > 1 && ` - ${parseInt(period) + typedSlot.duration - 1}`}
+                                    Period {entry.period}
                                   </td>
-                                  <td className="py-3 px-4 text-sm text-gray-900 border border-gray-200">
-                                    {getSubjectName(typedSlot.subject)}
+                                  <td className="py-3 px-4 text-sm text-gray-600 border border-gray-200">
+                                    {entry.period_timing 
+                                      ? `${entry.period_timing.start_time} - ${entry.period_timing.end_time}`
+                                      : '-'}
                                   </td>
-                                  <td className="py-3 px-4 text-sm text-gray-500 border border-gray-200">
-                                    {subject?.is_lab ? (
-                                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                  <td className="py-3 px-4 border border-gray-200">
+                                    <div className="font-medium text-gray-900">{entry.subject_name}</div>
+                                    <div className="text-xs text-gray-500">{entry.subject_code}</div>
+                                  </td>
+                                  <td className="py-3 px-4 border border-gray-200">
+                                    {entry.is_lab ? (
+                                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
                                         Lab
                                       </span>
                                     ) : (
-                                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
                                         Theory
                                       </span>
                                     )}
                                   </td>
-                                  <td className="py-3 px-4 text-sm text-gray-500 border border-gray-200">
-                                    {getClassName(selectedTimetable.class_id._id)}
+                                  <td className="py-3 px-4 text-sm text-gray-600 border border-gray-200">
+                                    {entry.class_name}
                                   </td>
                                 </tr>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-center py-8 text-gray-500">
-                      You don't have any classes scheduled for {selectedDay}.
-                    </p>
-                  )}
-                </div>
-              )}
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 bg-gray-50 rounded-lg">
+                        <svg className="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <p className="text-gray-500">No classes scheduled for {dayLabels[selectedDay]}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

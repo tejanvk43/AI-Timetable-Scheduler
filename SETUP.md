@@ -24,7 +24,7 @@ MONGODB_URI=mongodb://localhost:27017/timetable_scheduler
 JWT_SECRET=your-secret-key-here
 JWT_EXPIRE=30d
 NODE_ENV=development
-PORT=5000
+PORT=5001
 ```
 
 ### 3. Database Setup
@@ -51,7 +51,7 @@ npm start
 
 ### 5. Access Application
 
-- **URL**: http://localhost:3000
+- **URL**: http://localhost:3001
 - **Admin Login**: 
   - Username: `1001`
   - Password: `admin123`
@@ -98,8 +98,8 @@ npm run setup
 - Check MONGODB_URI in .env file
 
 **Port Already in Use:**
-- Backend runs on port 5000
-- Frontend runs on port 3000
+- Backend runs on port 5001
+- Frontend runs on port 3001
 - Change ports in respective configs if needed
 
 **Admin Login Not Working:**

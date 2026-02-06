@@ -192,30 +192,50 @@ const ManageClasses: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Manage Classes</h1>
-      
-      {error && (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
-          <p>{error}</p>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Manage Classes</h1>
+          <p className="text-lg text-gray-600">Add, edit, and manage class information</p>
         </div>
-      )}
-      
-      {/* Action Buttons */}
-      <div className="mb-6 flex flex-wrap gap-4">
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md"
-        >
-          Add New Class
-        </button>
-        <button
-          onClick={() => setShowBulkUpload(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md"
-        >
-          Bulk Upload Classes
-        </button>
-      </div>
+        
+        {error && (
+          <div className="bg-red-50 border-l-4 border-red-400 p-6 rounded-r-lg shadow-sm mb-6" role="alert">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-red-800 font-medium">{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Action Buttons */}
+        <div className="mb-8 flex flex-wrap gap-4">
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Add New Class
+          </button>
+          <button
+            onClick={() => setShowBulkUpload(true)}
+            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            Bulk Upload Classes
+          </button>
+        </div>
       
       {/* Add Class Form */}
       {showAddForm && (
@@ -542,6 +562,7 @@ const ManageClasses: React.FC = () => {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 };

@@ -120,7 +120,7 @@ REACT_APP_API_URL=https://your-backend-domain.com
 In `backend/server.js`, update CORS for production:
 ```javascript
 app.use(cors({
-  origin: ['https://your-frontend-domain.com', 'http://localhost:3000'],
+  origin: ['https://your-frontend-domain.com', 'http://localhost:3001'],
   credentials: true
 }));
 ```

@@ -19,10 +19,10 @@ npm start
 
 ### Method 3: Individual Services
 ```bash
-# Backend only (http://localhost:5000)
+# Backend only (http://localhost:5001)
 npm run backend
 
-# Frontend only (http://localhost:3000)  
+# Frontend only (http://localhost:3001)  
 npm run frontend
 ```
 
@@ -53,13 +53,13 @@ MONGODB_URI=mongodb://localhost:27017/timetable
 JWT_SECRET=your-secret-key-here
 JWT_EXPIRE=30d
 NODE_ENV=development
-PORT=5000
+PORT=5001
 ```
 
 ## 🌐 Access URLs
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000
+- **Frontend**: http://localhost:3001
+- **Backend API**: http://localhost:5001
 - **Login**: Username: `1001`, Password: `admin123`
 
 ## 📋 Available Commands

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// API base URL from environment variable or default to localhost:5000
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// API base URL from environment variable or default to localhost:5001
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
 // Create axios instance
 const api = axios.create({
@@ -77,9 +77,34 @@ export const timetables = {
   delete: (id) => api.delete(`/timetables/${id}`)
 };
 
+// Templates API
+export const templates = {
+  getAll: () => api.get('/templates'),
+  getPublic: () => api.get('/templates/public'),
+  getById: (id) => api.get(`/templates/${id}`),
+  create: (templateData) => api.post('/templates', templateData),
+  update: (id, templateData) => api.put(`/templates/${id}`, templateData),
+  delete: (id) => api.delete(`/templates/${id}`)
+};
+
 // AI Timetable Generation API
 export const aiGeneration = {
-  generateTimetable: (generationData) => api.post('/ai/generate-timetable', generationData)
+  generateTimetable: (generationData) => api.post('/ai/generate-timetable', generationData),
+  editTimetableEntry: (editData) => api.put('/ai/edit-timetable-entry', editData),
+  regenerateTimetable: (regenerateData) => api.post('/ai/regenerate-timetable', regenerateData),
+  regenerateAllTimetables: () => api.post('/ai/regenerate-all-timetables', {})
+};
+
+// Academic Years API
+export const academicYears = {
+  getAll: () => api.get('/academic-years'),
+  getById: (id) => api.get(`/academic-years/${id}`),
+  getActive: () => api.get('/academic-years/active'),
+  getCurrent: () => api.get('/academic-years/current'),
+  create: (yearData) => api.post('/academic-years', yearData),
+  update: (id, yearData) => api.put(`/academic-years/${id}`, yearData),
+  activate: (id) => api.put(`/academic-years/${id}/activate`),
+  delete: (id) => api.delete(`/academic-years/${id}`)
 };
 
 export default api;

@@ -31,7 +31,7 @@ router.get('/', async (req, res) => {
 // @access  Public
 router.get('/:id', async (req, res) => {
   try {
-    const timetable = await Timetable.findById(req.params.id)
+    const timetableDoc = await Timetable.findById(req.params.id)
       .populate('class_id', 'name branch year class_teacher_id')
       .populate({
         path: 'class_id',
@@ -41,9 +41,12 @@ router.get('/:id', async (req, res) => {
         }
       });
     
-    if (!timetable) {
+    if (!timetableDoc) {
       return res.status(404).json({ message: 'Timetable not found' });
     }
+    
+    // Convert to plain object to allow modifications
+    const timetable = timetableDoc.toObject();
     
     // Populate schedule details with subject and faculty info
     if (timetable.schedule) {
@@ -226,78 +229,7 @@ router.get('/faculty/:facultyId', protect, async (req, res) => {
   }
 });
 
-// @route   POST /api/timetables
-// @desc    Create new timetable
-// @access  Private/Admin (temporarily disabled for testing)
-router.post('/', async (req, res) => {
-  try {
-    console.log('=== CREATE TIMETABLE REQUEST ===');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
-    console.log('User:', req.user);
-    
-    const {
-      class_id,
-      academic_year,
-      periods_per_day,
-      working_days,
-      period_timings,
-      guidelines
-    } = req.body;
-    
-    // Check if class exists
-    const classExists = await Class.findById(class_id);
-    
-    if (!classExists) {
-      console.log('Class not found:', class_id);
-      return res.status(400).json({ message: 'Class not found' });
-    }
-    
-    // Check if timetable for this class and academic year already exists
-    const timetableExists = await Timetable.findOne({ class_id, academic_year });
-    
-    if (timetableExists) {
-      return res.status(400).json({ message: 'Timetable for this class and academic year already exists' });
-    }
-
-    // Generate period names from period timings
-    const periodNames = period_timings
-      ? period_timings
-          .filter(p => !p.is_break)
-          .map(p => p.name)
-      : Array.from({ length: periods_per_day }, (_, i) => `Period ${i + 1}`);
-    
-    // Create empty schedule structure based on working days
-    const emptySchedule = {};
-    const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    allDays.forEach(day => {
-      emptySchedule[day] = [];
-    });
-    
-    // Create new timetable
-    const timetable = await Timetable.create({
-      class_id,
-      academic_year,
-      periods_per_day,
-      working_days: working_days || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
-      period_names: periodNames,
-      period_timings: period_timings || [],
-      break_timings: [], // Keep for backward compatibility
-      schedule: emptySchedule,
-      guidelines: guidelines || {}
-    });
-    
-    res.status(201).json({
-      message: 'Timetable created successfully',
-      data: timetable
-    });
-  } catch (error) {
-    console.error('=== TIMETABLE CREATION ERROR ===');
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    console.error('Error details:', error);
-    res.status(500).json({ message: 'Error creating timetable', error: error.message });
-  }
-});
+// Removed duplicate POST route - see line 413 for the active POST route with proper authentication
 
 // @route   PUT /api/timetables/:id
 // @desc    Update timetable structure or guidelines
@@ -415,54 +347,79 @@ router.put('/:id/reset', protect, authorize('admin'), async (req, res) => {
 // @access  Private/Admin
 router.post('/', protect, authorize('admin'), async (req, res) => {
   try {
+    console.log('=== CREATE TIMETABLE REQUEST ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    console.log('User:', req.user ? req.user._id : 'No user');
+    
     const { 
       class_id, 
       academic_year, 
       periods_per_day, 
       working_days, 
       period_timings, 
-      guidelines 
+      guidelines,
+      template_id 
     } = req.body;
     
     if (!class_id || !academic_year) {
+      console.error('Missing required fields:', { class_id, academic_year });
       return res.status(400).json({ message: 'Class ID and academic year are required' });
     }
     
     // Check if class exists
     const classExists = await Class.findById(class_id);
     if (!classExists) {
+      console.error('Class not found:', class_id);
       return res.status(404).json({ message: 'Class not found' });
     }
     
-    // Check if timetable already exists for this class and academic year
+    // Check if timetable already exists for this class and academic year - delete if exists
     const existingTimetable = await Timetable.findOne({ 
       class_id: class_id, 
       academic_year: academic_year 
     });
     
     if (existingTimetable) {
-      return res.status(400).json({ 
-        message: 'Timetable structure already exists for this class and academic year' 
-      });
+      console.log('Found existing timetable, deleting:', { class_id, academic_year });
+      await Timetable.findByIdAndDelete(existingTimetable._id);
+      console.log('Old timetable deleted, creating new one');
+    }
+    
+    // If template_id is provided, load template data
+    let templateData = null;
+    if (template_id) {
+      const Template = require('../models/Template');
+      templateData = await Template.findById(template_id);
+      
+      if (!templateData) {
+        console.error('Template not found:', template_id);
+        return res.status(404).json({ message: 'Template not found' });
+      }
+      
+      console.log('Using template:', templateData.name);
     }
     
     // Create new timetable structure
     const timetable = await Timetable.create({
       class_id,
       academic_year,
-      periods_per_day: periods_per_day || 6,
-      working_days: working_days || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
-      period_timings: period_timings || [
-        { name: 'Period 1', start: '09:00', end: '09:50' },
-        { name: 'Period 2', start: '09:50', end: '10:40' },
-        { name: 'Break', start: '10:40', end: '11:00' },
-        { name: 'Period 3', start: '11:00', end: '11:50' },
-        { name: 'Period 4', start: '11:50', end: '12:40' },
-        { name: 'Lunch Break', start: '12:40', end: '01:30' },
-        { name: 'Period 5', start: '01:30', end: '02:20' },
-        { name: 'Period 6', start: '02:20', end: '03:10' }
+      template_id: template_id || null,
+      periods_per_day: periods_per_day || templateData?.periods_per_day || 6,
+      working_days: working_days || templateData?.days || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      period_names: period_timings ? 
+        period_timings.filter(p => !p.is_break).map(p => p.name) :
+        Array.from({ length: periods_per_day || 6 }, (_, i) => `Period ${i + 1}`),
+      period_timings: period_timings || templateData?.guidelines?.period_timings || [
+        { name: 'Period 1', start_time: '09:00', end_time: '09:50' },
+        { name: 'Period 2', start_time: '09:50', end_time: '10:40' },
+        { name: 'Break', start_time: '10:40', end_time: '11:00', is_break: true, break_duration: 20 },
+        { name: 'Period 3', start_time: '11:00', end_time: '11:50' },
+        { name: 'Period 4', start_time: '11:50', end_time: '12:40' },
+        { name: 'Lunch Break', start_time: '12:40', end_time: '01:30', is_break: true, break_duration: 50 },
+        { name: 'Period 5', start_time: '01:30', end_time: '02:20' },
+        { name: 'Period 6', start_time: '02:20', end_time: '03:10' }
       ],
-      guidelines: guidelines || {
+      guidelines: guidelines || templateData?.guidelines || {
         minimize_consecutive_faculty_periods: true,
         labs_once_a_week: true,
         sports_last_period_predefined_day: 'friday',
@@ -478,6 +435,8 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
       }
     });
     
+    console.log('Timetable created successfully:', timetable._id);
+    
     // Populate the response
     const populatedTimetable = await Timetable.findById(timetable._id)
       .populate('class_id', 'name branch year section');
@@ -487,7 +446,19 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
       data: populatedTimetable
     });
   } catch (error) {
-    console.error(error);
+    console.error('=== TIMETABLE CREATION ERROR ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(e => e.message);
+      return res.status(400).json({ 
+        message: 'Validation error', 
+        errors: validationErrors 
+      });
+    }
+    
     res.status(500).json({ message: 'Error creating timetable structure', error: error.message });
   }
 });

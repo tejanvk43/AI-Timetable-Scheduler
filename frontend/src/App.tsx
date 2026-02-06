@@ -22,10 +22,12 @@ import ManageClasses from './pages/admin/ManageClasses';
 import ManageTimetables from './pages/admin/ManageTimetables';
 import GenerateTimetable from './pages/admin/GenerateTimetable';
 import TimetableCanvas from './pages/admin/TimetableCanvas';
+import PeriodTimingCanvas from './pages/admin/PeriodTimingCanvas';
+import AcademicYearSettings from './pages/admin/AcademicYearSettings';
 
 // Faculty Pages
 import FacultyDashboard from './pages/faculty/FacultyDashboard';
-
+  
 function App() {
   return (
     <AuthProvider>
@@ -72,6 +74,16 @@ function App() {
               <Route path="/admin/canvas" element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <TimetableCanvas />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/period-timing" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <PeriodTimingCanvas />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/academic-year" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AcademicYearSettings />
                 </ProtectedRoute>
               } />
 

@@ -44,7 +44,7 @@ echo.
 echo Next steps:
 echo 1. Configure your MongoDB connection in backend/.env
 echo 2. Run 'npm run dev' or use start.bat to begin development
-echo 3. Open http://localhost:3000 in your browser
+echo 3. Open http://localhost:3001 in your browser
 echo.
 echo Default login: Username: 1001, Password: admin123
 echo.

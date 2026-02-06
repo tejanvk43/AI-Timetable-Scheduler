@@ -23,8 +23,8 @@ const PeriodTimingSchema = new mongoose.Schema({
   },
   break_duration: {
     type: Number,
-    required: function() { return this.is_break; },
-    min: 1
+    default: 0,
+    min: 0  // Allow 0 for non-break periods
   }
 }, { _id: false });
 
@@ -97,11 +97,16 @@ const TimetableSchema = new mongoose.Schema({
     ref: 'Class',
     required: [true, 'Please add class ID']
   },
+  template_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Template',
+    required: false // Optional - timetables can be created with or without templates
+  },
   academic_year: {
     type: String,
     required: [true, 'Please add academic year'],
     trim: true
-  },
+  },   
   periods_per_day: {
     type: Number,
     required: [true, 'Please add number of periods per day'],
