@@ -93,14 +93,16 @@ The application features a modern React frontend with TypeScript, a robust Node.
 ### 📊 Data Management
 - **Bulk Upload**: Import classes, subjects, and faculty via CSV
 - **Excel Export**: Download timetables in Excel format
+- **PDF Export**: Download timetables as formatted PDF documents
 - **Template Downloads**: Sample CSV templates for easy onboarding
 - **Database Scripts**: Easy setup, seeding, and cleanup utilities
 
 ### 🎨 Modern UI/UX
 - **Responsive Design**: Works seamlessly on desktop and mobile
-- **Dark/Light Mode**: Theme toggle for user preference
-- **Interactive Canvas**: Drag-and-drop timetable editing
+- **Grid-Based Timetable View**: Traditional timetable format with periods and days
+- **Interactive Editing**: Click-to-edit timetable cells
 - **Real-time Updates**: Instant feedback on changes
+- **Download Options**: Export timetables as Excel or PDF
 - **Tailwind CSS**: Clean, modern styling
 
 ---
@@ -131,6 +133,8 @@ The application features a modern React frontend with TypeScript, a robust Node.
 | **Tailwind CSS** | Utility-first styling |
 | **Lucide React** | Icon library |
 | **xlsx** | Excel file handling |
+| **jsPDF** | PDF generation |
+| **html2canvas** | HTML to canvas conversion |
 
 ---
 
@@ -168,8 +172,7 @@ setup.bat
 ```bash
 git clone https://github.com/yourusername/ai-timetable-scheduler.git
 cd ai-timetable-scheduler
-chmod +x start.sh
-./start.sh
+npm run setup
 ```
 
 ### Manual Installation
@@ -249,15 +252,13 @@ FRONTEND_URL=http://localhost:3002
 
 ### Database Setup
 
-Initialize the database with default admin user:
+Initialize the database with an initial admin user:
 ```bash
 cd backend
 npm run setup
 ```
 
-This creates an admin user with:
-- **Username**: `1001`
-- **Password**: `admin123`
+This will create the initial admin user. The credentials will be displayed in the console after setup. **Please change the default password after first login for security.**
 
 ---
 
@@ -285,9 +286,7 @@ npm run frontend
 ### Accessing the Application
 
 1. Open your browser and navigate to `http://localhost:3002`
-2. Login with admin credentials:
-   - **Username**: `1001`
-   - **Password**: `admin123`
+2. Login with the admin credentials created during database setup
 
 ### Complete Workflow
 
@@ -334,6 +333,18 @@ npm run frontend
    - Assign faculty to subjects
    - Click "Generate with AI"
    - Review and save the generated timetable
+
+#### Phase 4: View and Export
+
+8. **View Timetables**
+   - Faculty can view their assigned classes in the Faculty Dashboard
+   - Admin can view and edit timetables in Manage Timetables
+   - Grid-based view shows periods vs days format
+
+9. **Export Timetables**
+   - Download as Excel for spreadsheet applications
+   - Download as PDF for printing and sharing
+   - Available in both Faculty and Admin dashboards
 
 ---
 
@@ -438,12 +449,8 @@ ai-timetable-scheduler/
 │
 ├── 📄 package.json              # Root package with scripts
 ├── 📄 README.md                 # This documentation
-├── 📄 WORKFLOW.md               # Detailed usage workflow
-├── 📄 SETUP.md                  # Quick setup guide
-├── 📄 DEPLOYMENT.md             # Deployment instructions
-├── 📄 PROJECT_STRUCTURE.md      # Detailed structure docs
 ├── 🔧 setup.bat                 # Windows setup script
-├── 🔧 start.sh                  # Linux/Mac setup script
+├── 🔧 start.sh                  # Linux/Mac start script
 │
 ├── 📂 backend/                  # Node.js + Express Backend
 │   ├── 📂 config/               # Configuration files
@@ -625,19 +632,21 @@ ai-timetable-scheduler/
 
 ### Deployment Options
 
-#### Option 1: Heroku
-See detailed instructions in [DEPLOYMENT.md](./DEPLOYMENT.md)
+#### Option 1: Heroku + Vercel/Netlify
 
 ```bash
-# Backend
+# Backend - Deploy to Heroku
 heroku create your-app-backend
 heroku config:set MONGODB_URI="your-atlas-uri"
 heroku config:set JWT_SECRET="your-secret"
+heroku config:set OPENAI_API_KEY="your-openai-key"
+heroku config:set FRONTEND_URL="https://your-frontend-domain.com"
 git push heroku main
 
-# Frontend
+# Frontend - Deploy to Vercel/Netlify
+cd frontend
 npm run build
-# Deploy to Netlify/Vercel
+# Upload build folder to your hosting provider
 ```
 
 #### Option 2: Railway + Vercel
@@ -764,16 +773,24 @@ taskkill /PID <PID> /F
 # Linux/Mac
 lsof -i :5001
 kill -9 <PID>
+
+# Or change the PORT in backend/.env file
 ```
 
 #### JWT Token Expired
-**Solution**: Login again to get a new token
+**Solution**: 
+- Login again to get a new token
+- Check `JWT_EXPIRE` setting in `.env` file
+- Default expiration is 30 days
 
 #### OpenAI API Error
 ```
 Error: 401 Unauthorized
 ```
-**Solution**: Verify `OPENAI_API_KEY` in `.env` file
+**Solution**: 
+- Verify `OPENAI_API_KEY` in `.env` file
+- Ensure the API key is valid and has sufficient credits
+- Check OpenAI API status if issues persist
 
 #### Build Errors
 ```bash
@@ -787,8 +804,8 @@ npm run setup
 ### Getting Help
 
 - Check existing [GitHub Issues](https://github.com/yourusername/ai-timetable-scheduler/issues)
-- Review [WORKFLOW.md](./WORKFLOW.md) for usage guide
-- Review [SETUP.md](./SETUP.md) for installation issues
+- Review the documentation sections above for detailed guides
+- Ensure all environment variables are properly configured
 
 ---
 
@@ -808,11 +825,9 @@ This project is licensed under the ISC License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 📞 Contact
+## 📞 Support
 
-- **GitHub**: [@yourusername](https://github.com/yourusername)
-- **Email**: your.email@example.com
-- **Project Link**: [https://github.com/yourusername/ai-timetable-scheduler](https://github.com/yourusername/ai-timetable-scheduler)
+For issues, questions, or contributions, please use the GitHub Issues section of this repository.
 
 ---
 

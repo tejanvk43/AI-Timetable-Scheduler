@@ -51,8 +51,15 @@ const Home: React.FC = () => {
       try {
         setLoading(true);
         const response = await timetables.getByClass(selectedClass);
-        setTimetableData(response.data.data?.[0] || null);
+        // API returns { message: '...', data: timetable }
+        const data = response.data?.data;
+        if (data && data.schedule) {
+          setTimetableData(data);
+        } else {
+          setTimetableData(null);
+        }
       } catch (err) {
+        console.error('Error fetching timetable:', err);
         setTimetableData(null);
       } finally {
         setLoading(false);
@@ -286,51 +293,97 @@ const Home: React.FC = () => {
         )}
 
         {/* Timetable Display */}
-        {!loading && timetableData && (
-          <div className="card">
-            <div className="card-header">
-              <h2 className="font-semibold text-slate-800">
-                {timetableData.class_id?.name || 'Class'} Schedule
+        {!loading && timetableData && timetableData.schedule && (
+          <div className="bg-white rounded-lg shadow-md border border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+              <h2 className="text-xl font-semibold">
+                {timetableData.class_id?.name || 'Class'} - {timetableData.academic_year || 'Timetable'}
               </h2>
-              <span className="badge badge-success">Active</span>
             </div>
-            <div className="card-body overflow-x-auto">
-              <table className="w-full min-w-[800px]">
+            <div className="p-6 overflow-x-auto">
+              <table className="min-w-full border-collapse border border-gray-300">
                 <thead>
-                  <tr>
-                    <th className="timetable-header">Day/Period</th>
-                    {Array.from({ length: timetableData.periods_per_day || 6 }, (_, i) => (
-                      <th key={i} className="timetable-header">Period {i + 1}</th>
-                    ))}
+                  <tr className="bg-gray-100">
+                    <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Day</th>
+                    {Array.from({ length: timetableData.periods_per_day || 6 }, (_, i) => {
+                      const periodNum = i + 1;
+                      const timing = timetableData.period_timings?.[i];
+                      return (
+                        <th key={i} className="border border-gray-300 px-3 py-3 text-center font-semibold text-gray-700">
+                          <div>Period {periodNum}</div>
+                          {timing && !timing.is_break && (
+                            <div className="text-xs text-gray-500 font-normal mt-1">
+                              {timing.start_time} - {timing.end_time}
+                            </div>
+                          )}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map(day => (
-                    <tr key={day}>
-                      <td className="timetable-period capitalize">{day}</td>
-                      {Array.from({ length: timetableData.periods_per_day || 6 }, (_, i) => {
-                        const entry = timetableData.schedule?.[day]?.find((e: any) => e.period === i + 1);
-                        return (
-                          <td key={i} className="timetable-cell">
-                            {entry ? (
-                              <div>
-                                <p className="font-medium text-slate-700 text-sm">
-                                  {entry.subject_details?.name || entry.subject_id?.name || 'Subject'}
-                                </p>
-                                <p className="text-slate-500 text-xs">
-                                  {entry.faculty_details?.name || entry.faculty_id?.name || 'Faculty'}
-                                </p>
-                              </div>
-                            ) : (
-                              <span className="text-slate-300">-</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map(day => {
+                    const daySchedule = timetableData.schedule[day] || [];
+                    return (
+                      <tr key={day} className="hover:bg-gray-50">
+                        <td className="border border-gray-300 px-4 py-3 font-medium bg-gray-50 text-gray-900 capitalize">
+                          {day}
+                        </td>
+                        {Array.from({ length: timetableData.periods_per_day || 6 }, (_, i) => {
+                          const periodNum = i + 1;
+                          const entry = daySchedule.find((e: any) => e.period === periodNum);
+                          const isLab = entry?.is_lab || entry?.subject_details?.is_lab;
+                          
+                          return (
+                            <td
+                              key={i}
+                              className={`border border-gray-300 px-3 py-4 text-center min-w-[150px] ${
+                                isLab
+                                  ? 'bg-purple-50'
+                                  : entry
+                                  ? 'bg-blue-50'
+                                  : 'bg-white'
+                              }`}
+                            >
+                              {entry ? (
+                                <div className="space-y-1">
+                                  <div className={`font-semibold text-sm ${
+                                    isLab ? 'text-purple-800' : 'text-blue-800'
+                                  }`}>
+                                    {entry.subject_details?.name || entry.subject_id?.name || 'Subject'}
+                                  </div>
+                                  <div className="text-xs text-gray-600 font-medium">
+                                    {entry.faculty_details?.name || entry.faculty_id?.name || 'Faculty'}
+                                  </div>
+                                  {isLab && (
+                                    <span className="inline-block mt-1 px-2 py-0.5 bg-purple-200 text-purple-800 text-xs rounded">
+                                      Lab
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-300">-</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+              
+              {/* Legend */}
+              <div className="mt-4 flex items-center space-x-4 text-sm text-gray-600">
+                <div className="flex items-center">
+                  <div className="w-4 h-4 bg-blue-50 border border-blue-200 mr-2"></div>
+                  <span>Theory Class</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-4 h-4 bg-purple-50 border border-purple-200 mr-2"></div>
+                  <span>Lab Session</span>
+                </div>
+              </div>
             </div>
           </div>
         )}

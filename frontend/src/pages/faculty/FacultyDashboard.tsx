@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext.js';
 import { timetables } from '../../utils/api';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface ScheduleEntry {
   period: number;
@@ -182,9 +184,74 @@ const FacultyDashboard: React.FC = () => {
     XLSX.writeFile(wb, fileName);
   };
 
-  // Download timetable as PDF (using window.print for now, can be enhanced with jsPDF)
-  const downloadAsPDF = () => {
-    window.print();
+  // Download timetable as PDF
+  const downloadAsPDF = async () => {
+    if (!timetableRef.current) return;
+    
+    try {
+      // Capture the timetable table as canvas
+      const canvas = await html2canvas(timetableRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: timetableRef.current.scrollWidth,
+        windowHeight: timetableRef.current.scrollHeight
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      
+      // Calculate PDF dimensions (A4 landscape: 297mm x 210mm)
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const pdfWidth = 297; // A4 landscape width in mm
+      const pdfHeight = 210; // A4 landscape height in mm
+      const margin = 10;
+      const contentWidth = pdfWidth - (2 * margin);
+      const contentHeight = pdfHeight - 50; // Leave space for header
+      const imgAspectRatio = imgWidth / imgHeight;
+      
+      // Calculate dimensions to fit the image
+      let finalWidth = contentWidth;
+      let finalHeight = contentWidth / imgAspectRatio;
+      
+      // If height exceeds available space, scale down
+      if (finalHeight > contentHeight) {
+        finalHeight = contentHeight;
+        finalWidth = contentHeight * imgAspectRatio;
+      }
+      
+      // Center the image
+      const xPos = (pdfWidth - finalWidth) / 2;
+      const yPos = 40; // Start after header
+      
+      // Create PDF
+      const pdf = new jsPDF('landscape', 'mm', 'a4');
+      
+      // Add title
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Faculty Timetable', pdfWidth / 2, 15, { align: 'center' });
+      
+      // Add faculty name
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Faculty: ${currentUser?.name || 'Faculty'}`, pdfWidth / 2, 25, { align: 'center' });
+      
+      // Add date
+      pdf.setFontSize(10);
+      pdf.text(`Generated: ${new Date().toLocaleDateString()}`, pdfWidth / 2, 32, { align: 'center' });
+      
+      // Add the timetable image
+      pdf.addImage(imgData, 'PNG', xPos, yPos, finalWidth, finalHeight);
+      
+      // Save PDF
+      const fileName = `Timetable_${currentUser?.name || 'Faculty'}_${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
   };
 
   return (
