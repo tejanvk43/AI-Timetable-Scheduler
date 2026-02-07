@@ -171,9 +171,16 @@ router.get('/faculty/:facultyId', protect, async (req, res) => {
       return res.status(404).json({ message: 'Faculty not found' });
     }
     
+    // Normalize facultyId for comparison (handle both ObjectId and string)
+    const facultyIdStr = req.params.facultyId.toString();
+    
+    console.log(`Fetching timetable for faculty: ${facultyIdStr} (${faculty.name})`);
+    
     // Find all timetables
     const timetables = await Timetable.find()
       .populate('class_id', 'name branch year');
+    
+    console.log(`Found ${timetables.length} timetables to search`);
     
     // Extract faculty schedule from all timetables
     const facultySchedule = {
@@ -186,14 +193,31 @@ router.get('/faculty/:facultyId', protect, async (req, res) => {
     };
     
     const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    let totalEntriesChecked = 0;
+    let matchingEntries = 0;
     
     for (const timetable of timetables) {
       const classInfo = timetable.class_id;
       
       for (const day of days) {
-        if (timetable.schedule[day] && timetable.schedule[day].length > 0) {
+        if (timetable.schedule && timetable.schedule[day] && Array.isArray(timetable.schedule[day]) && timetable.schedule[day].length > 0) {
           for (const entry of timetable.schedule[day]) {
-            if (entry.faculty_id && entry.faculty_id.toString() === req.params.facultyId) {
+            totalEntriesChecked++;
+            
+            // Normalize entry.faculty_id for comparison
+            let entryFacultyId = null;
+            if (entry.faculty_id) {
+              // Handle both ObjectId and string formats
+              if (typeof entry.faculty_id === 'object' && entry.faculty_id.toString) {
+                entryFacultyId = entry.faculty_id.toString();
+              } else if (typeof entry.faculty_id === 'string') {
+                entryFacultyId = entry.faculty_id;
+              }
+            }
+            
+            // Compare normalized IDs
+            if (entryFacultyId && entryFacultyId === facultyIdStr) {
+              matchingEntries++;
               const subject = await Subject.findById(entry.subject_id);
               
               facultySchedule[day].push({
@@ -202,13 +226,17 @@ router.get('/faculty/:facultyId', protect, async (req, res) => {
                 subject_code: subject ? subject.code : '',
                 is_lab: subject ? subject.is_lab : false,
                 class_name: classInfo ? classInfo.name : 'Unknown Class',
-                period_timing: timetable.period_timings[entry.period - 1]
+                period_timing: timetable.period_timings && timetable.period_timings[entry.period - 1] 
+                  ? timetable.period_timings[entry.period - 1] 
+                  : null
               });
             }
           }
         }
       }
     }
+    
+    console.log(`Checked ${totalEntriesChecked} entries, found ${matchingEntries} matching entries for faculty ${facultyIdStr}`);
     
     // Sort each day's schedule by period
     for (const day of days) {
@@ -224,7 +252,7 @@ router.get('/faculty/:facultyId', protect, async (req, res) => {
       schedule: facultySchedule
     });
   } catch (error) {
-    console.error(error);
+    console.error('Error retrieving faculty timetable:', error);
     res.status(500).json({ message: 'Error retrieving faculty timetable', error: error.message });
   }
 });

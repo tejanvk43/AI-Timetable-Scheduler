@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 // @ts-ignore
 import { useAuth } from '../../context/AuthContext.js';
 import { timetables } from '../../utils/api';
+import * as XLSX from 'xlsx';
 
 interface ScheduleEntry {
   period: number;
@@ -27,8 +28,8 @@ const FacultyDashboard: React.FC = () => {
   const [mySubjects, setMySubjects] = useState<any[]>([]);
   const [myClasses, setMyClasses] = useState<string[]>([]);
   const [facultyInfo, setFacultyInfo] = useState<{ name: string; faculty_id: string } | null>(null);
-  const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
-  const [selectedDay, setSelectedDay] = useState<string>('monday');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const timetableRef = useRef<HTMLDivElement>(null);
 
   const workingDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const dayLabels: { [key: string]: string } = {
@@ -134,6 +135,56 @@ const FacultyDashboard: React.FC = () => {
       }
     });
     return max || 8; // Default 8 periods
+  };
+
+  // Get entry for a specific day and period
+  const getEntry = (day: string, period: number): ScheduleEntry | null => {
+    const daySchedule = mySchedule[day] || [];
+    return daySchedule.find((entry: ScheduleEntry) => entry.period === period) || null;
+  };
+
+  // Download timetable as Excel
+  const downloadAsExcel = () => {
+    const maxPeriods = getMaxPeriods();
+    const data: any[][] = [];
+    
+    // Header row
+    const header = ['Day', ...Array.from({ length: maxPeriods }, (_, i) => `Period ${i + 1}`)];
+    data.push(header);
+    
+    // Data rows
+    workingDays.forEach(day => {
+      const row = [dayLabels[day]];
+      for (let period = 1; period <= maxPeriods; period++) {
+        const entry = getEntry(day, period);
+        if (entry) {
+          row.push(`${entry.subject_name}\n${entry.class_name}${entry.is_lab ? ' (Lab)' : ''}`);
+        } else {
+          row.push('');
+        }
+      }
+      data.push(row);
+    });
+    
+    // Create workbook and worksheet
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Timetable');
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 12 }, // Day column
+      ...Array(maxPeriods).fill({ wch: 25 }) // Period columns
+    ];
+    
+    // Download
+    const fileName = `Timetable_${currentUser?.name || 'Faculty'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  // Download timetable as PDF (using window.print for now, can be enhanced with jsPDF)
+  const downloadAsPDF = () => {
+    window.print();
   };
 
   return (
@@ -280,26 +331,28 @@ const FacultyDashboard: React.FC = () => {
                   <h2 className="text-xl font-semibold text-gray-900">My Schedule</h2>
                   
                   <div className="flex space-x-2">
-                    <button
-                      onClick={() => setViewMode('week')}
-                      className={`px-4 py-2 text-sm rounded-lg transition-colors ${
-                        viewMode === 'week'
-                          ? 'bg-blue-100 text-blue-700 font-medium'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Week View
-                    </button>
-                    <button
-                      onClick={() => setViewMode('day')}
-                      className={`px-4 py-2 text-sm rounded-lg transition-colors ${
-                        viewMode === 'day'
-                          ? 'bg-blue-100 text-blue-700 font-medium'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Day View
-                    </button>
+                    {hasSchedule() && (
+                      <>
+                        <button
+                          onClick={downloadAsExcel}
+                          className="px-4 py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors flex items-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Download Excel
+                        </button>
+                        <button
+                          onClick={downloadAsPDF}
+                          className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors flex items-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                          Download PDF
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
                 
@@ -311,157 +364,96 @@ const FacultyDashboard: React.FC = () => {
                     <p className="text-gray-500 text-lg">No schedule assigned yet</p>
                     <p className="text-gray-400 mt-2">Your timetable will appear here once assigned by an admin.</p>
                   </div>
-                ) : viewMode === 'week' ? (
-                  /* Week View */
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full border-collapse">
+                ) : (
+                  <div ref={timetableRef} className="overflow-x-auto">
+                    <table className="min-w-full border-collapse border border-gray-300">
                       <thead>
-                        <tr className="bg-gray-50">
-                          <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
-                            Day
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
-                            Classes
-                          </th>
+                        <tr className="bg-gray-100">
+                          <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Day</th>
+                          {Array.from({ length: getMaxPeriods() }, (_, i) => {
+                            // Get timing for this period from any entry
+                            const periodNum = i + 1;
+                            let timing = null;
+                            for (const day of workingDays) {
+                              const entry = getEntry(day, periodNum);
+                              if (entry?.period_timing) {
+                                timing = entry.period_timing;
+                                break;
+                              }
+                            }
+                            
+                            return (
+                              <th key={i} className="border border-gray-300 px-3 py-3 text-center font-semibold text-gray-700">
+                                <div>Period {periodNum}</div>
+                                {timing && (
+                                  <div className="text-xs text-gray-500 font-normal mt-1">
+                                    {timing.start_time} - {timing.end_time}
+                                  </div>
+                                )}
+                              </th>
+                            );
+                          })}
                         </tr>
                       </thead>
                       <tbody>
-                        {workingDays.map(day => {
-                          const daySchedule = mySchedule[day] || [];
-                          const sortedSchedule = [...daySchedule].sort((a, b) => a.period - b.period);
-                          
-                          return (
-                            <tr key={day} className="hover:bg-gray-50">
-                              <td className="py-4 px-4 text-sm font-medium text-gray-900 border border-gray-200 whitespace-nowrap bg-gray-50 w-32">
-                                {dayLabels[day]}
-                              </td>
-                              <td className="py-4 px-4 border border-gray-200">
-                                {sortedSchedule.length > 0 ? (
-                                  <div className="flex flex-wrap gap-2">
-                                    {sortedSchedule.map((entry, idx) => (
-                                      <div 
-                                        key={idx}
-                                        className={`px-3 py-2 rounded-lg ${
-                                          entry.is_lab 
-                                            ? 'bg-purple-100 border border-purple-200' 
-                                            : 'bg-blue-50 border border-blue-200'
-                                        }`}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs font-semibold text-gray-500">P{entry.period}</span>
-                                          <span className={`text-xs px-1.5 py-0.5 rounded ${
-                                            entry.is_lab ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'
-                                          }`}>
-                                            {entry.is_lab ? 'Lab' : 'Theory'}
-                                          </span>
-                                        </div>
-                                        <div className="font-medium text-gray-900 mt-1">{entry.subject_name}</div>
-                                        <div className="text-xs text-gray-500">{entry.class_name}</div>
-                                        {entry.period_timing && (
-                                          <div className="text-xs text-gray-400 mt-1">
-                                            {entry.period_timing.start_time} - {entry.period_timing.end_time}
-                                          </div>
-                                        )}
+                        {workingDays.map(day => (
+                          <tr key={day} className="hover:bg-gray-50">
+                            <td className="border border-gray-300 px-4 py-3 font-medium bg-gray-50 text-gray-900">
+                              {dayLabels[day]}
+                            </td>
+                            {Array.from({ length: getMaxPeriods() }, (_, i) => {
+                              const periodNum = i + 1;
+                              const entry = getEntry(day, periodNum);
+                              
+                              return (
+                                <td
+                                  key={i}
+                                  className={`border border-gray-300 px-3 py-4 text-center min-w-[150px] ${
+                                    entry?.is_lab
+                                      ? 'bg-purple-50'
+                                      : entry
+                                      ? 'bg-blue-50'
+                                      : 'bg-white'
+                                  }`}
+                                >
+                                  {entry ? (
+                                    <div className="space-y-1">
+                                      <div className={`font-semibold text-sm ${
+                                        entry.is_lab ? 'text-purple-800' : 'text-blue-800'
+                                      }`}>
+                                        {entry.subject_name}
                                       </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400 italic">No classes</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
+                                      <div className="text-xs text-gray-600 font-medium">
+                                        {entry.class_name}
+                                      </div>
+                                      {entry.is_lab && (
+                                        <span className="inline-block mt-1 px-2 py-0.5 bg-purple-200 text-purple-800 text-xs rounded">
+                                          Lab
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-300">-</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
-                  </div>
-                ) : (
-                  /* Day View */
-                  <div>
-                    {/* Day Selector */}
-                    <div className="mb-6 flex flex-wrap gap-2">
-                      {workingDays.map(day => (
-                        <button
-                          key={day}
-                          onClick={() => setSelectedDay(day)}
-                          className={`px-4 py-2 text-sm rounded-lg transition-colors ${
-                            selectedDay === day
-                              ? 'bg-blue-600 text-white font-medium'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {dayLabels[day]}
-                        </button>
-                      ))}
-                    </div>
                     
-                    {/* Day Schedule Table */}
-                    {mySchedule[selectedDay] && mySchedule[selectedDay].length > 0 ? (
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full border-collapse">
-                          <thead>
-                            <tr className="bg-gray-50">
-                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
-                                Period
-                              </th>
-                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
-                                Time
-                              </th>
-                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
-                                Subject
-                              </th>
-                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
-                                Type
-                              </th>
-                              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border border-gray-200">
-                                Class
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {[...mySchedule[selectedDay]]
-                              .sort((a, b) => a.period - b.period)
-                              .map((entry, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50">
-                                  <td className="py-3 px-4 text-sm font-medium text-gray-900 border border-gray-200">
-                                    Period {entry.period}
-                                  </td>
-                                  <td className="py-3 px-4 text-sm text-gray-600 border border-gray-200">
-                                    {entry.period_timing 
-                                      ? `${entry.period_timing.start_time} - ${entry.period_timing.end_time}`
-                                      : '-'}
-                                  </td>
-                                  <td className="py-3 px-4 border border-gray-200">
-                                    <div className="font-medium text-gray-900">{entry.subject_name}</div>
-                                    <div className="text-xs text-gray-500">{entry.subject_code}</div>
-                                  </td>
-                                  <td className="py-3 px-4 border border-gray-200">
-                                    {entry.is_lab ? (
-                                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                                        Lab
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                                        Theory
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="py-3 px-4 text-sm text-gray-600 border border-gray-200">
-                                    {entry.class_name}
-                                  </td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
+                    {/* Legend */}
+                    <div className="mt-4 flex items-center space-x-4 text-sm text-gray-600">
+                      <div className="flex items-center">
+                        <div className="w-4 h-4 bg-blue-50 border border-blue-200 mr-2"></div>
+                        <span>Theory Class</span>
                       </div>
-                    ) : (
-                      <div className="text-center py-12 bg-gray-50 rounded-lg">
-                        <svg className="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        <p className="text-gray-500">No classes scheduled for {dayLabels[selectedDay]}</p>
+                      <div className="flex items-center">
+                        <div className="w-4 h-4 bg-purple-50 border border-purple-200 mr-2"></div>
+                        <span>Lab Session</span>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
               </div>

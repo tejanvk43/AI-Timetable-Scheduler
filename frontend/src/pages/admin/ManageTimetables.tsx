@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { timetables, classes, templates, subjects, users, aiGeneration } from '../../utils/api';
+import * as XLSX from 'xlsx';
 
 const ManageTimetables: React.FC = () => {
   const [timetableList, setTimetableList] = useState<any[]>([]);
@@ -20,6 +21,7 @@ const ManageTimetables: React.FC = () => {
   const [facultyList, setFacultyList] = useState<any[]>([]);
   const [regenerating, setRegenerating] = useState<boolean>(false);
   const [regeneratingAll, setRegeneratingAll] = useState<boolean>(false);
+  const timetableRef = useRef<HTMLDivElement>(null);
   
   // Form states
   const [formData, setFormData] = useState({
@@ -261,6 +263,59 @@ const ManageTimetables: React.FC = () => {
   const handleCancelEdit = () => {
     setEditingCell(null);
     setEditFormData({ subject_id: '', faculty_id: '', is_lab: false });
+  };
+
+  // Download timetable as Excel
+  const downloadAsExcel = () => {
+    if (!timetableDetails) return;
+    
+    const periodsPerDay = timetableDetails.periods_per_day || 6;
+    const data: any[][] = [];
+    
+    // Header row
+    const header = ['Day', ...Array.from({ length: periodsPerDay }, (_, i) => `Period ${i + 1}`)];
+    data.push(header);
+    
+    // Data rows
+    daysOfWeek.forEach(day => {
+      const row = [dayLabels[day]];
+      const daySchedule = timetableDetails.schedule[day] || [];
+      
+      for (let period = 1; period <= periodsPerDay; period++) {
+        const entry = daySchedule.find((e: any) => e.period === period);
+        if (entry) {
+          const subjectName = entry.subject_details?.name || entry.subject_id?.name || 'Subject';
+          const facultyName = entry.faculty_details?.name || entry.faculty_id?.name || 'Faculty';
+          const className = viewingTimetable?.class_id?.name || 'Class';
+          const labText = (entry.is_lab || entry.subject_details?.is_lab) ? ' (Lab)' : '';
+          row.push(`${subjectName}\n${className}\n${facultyName}${labText}`);
+        } else {
+          row.push('');
+        }
+      }
+      data.push(row);
+    });
+    
+    // Create workbook and worksheet
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Timetable');
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 12 }, // Day column
+      ...Array(periodsPerDay).fill({ wch: 25 }) // Period columns
+    ];
+    
+    // Download
+    const className = viewingTimetable?.class_id?.name || 'Class';
+    const fileName = `Timetable_${className}_${timetableDetails.academic_year}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  // Download timetable as PDF (using window.print)
+  const downloadAsPDF = () => {
+    window.print();
   };
 
   const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -575,28 +630,48 @@ const ManageTimetables: React.FC = () => {
               </h2>
               <div className="flex items-center space-x-3">
                 {timetableDetails?.schedule && Object.keys(timetableDetails.schedule).length > 0 && (
-                  <button
-                    onClick={handleRegenerate}
-                    disabled={regenerating}
-                    className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center"
-                  >
-                    {regenerating ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Regenerating...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Regenerate
-                      </>
-                    )}
-                  </button>
+                  <>
+                    <button
+                      onClick={downloadAsExcel}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Excel
+                    </button>
+                    <button
+                      onClick={downloadAsPDF}
+                      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      PDF
+                    </button>
+                    <button
+                      onClick={handleRegenerate}
+                      disabled={regenerating}
+                      className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center"
+                    >
+                      {regenerating ? (
+                        <>
+                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Regenerating...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Regenerate
+                        </>
+                      )}
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={closeTimetableView}
@@ -614,7 +689,7 @@ const ManageTimetables: React.FC = () => {
               </div>
             )}
             
-            <div className="p-6 overflow-auto max-h-[calc(90vh-120px)]">
+            <div ref={timetableRef} className="p-6 overflow-auto max-h-[calc(90vh-120px)]">
               {loadingDetails ? (
                 <div className="flex justify-center py-8">
                   <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
